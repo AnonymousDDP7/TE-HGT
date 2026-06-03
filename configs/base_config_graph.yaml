@@ -1,0 +1,61 @@
+#####################################################
+#####################################################
+TEXT_EMBEDDING_SIZES:
+  emoberta: 768
+  roberta: 768
+  minilm: 384
+  bert: 768
+  mentalbert: 768
+IMAGE_EMBEDDING_SIZES:
+  clip: 768
+  dino: 768
+EMOTION_EMBEDDING_SIZES:
+  j-hartmann: 7
+####################################################
+#####################################################
+
+# dataset: twitter
+num_folds: 5
+fold: 0
+
+# can be image, text, both
+modality: both
+
+use_class_weights: True
+
+# model: HGNNv5 #T-M2S
+
+# can be tim2vec, learned or zero
+position_embeddings: tim2vec #zero
+
+# can be relative or delta
+timestamp_kind: 'relative'
+
+image_embeddings_type: clip
+text_embeddings_type: mentalbert
+emotion_embeddings_type: j-hartmann
+# can be sin or cos
+time2vec_activation: sin
+
+# window_size: 128 
+
+base_lr: 0.0001 #0.00001
+
+graph_args:
+  embedding_size: 128
+  n_heads: 8
+  n_layers: 4   
+  dropout_prob: 0.1
+
+
+# cross_encoder_args:
+#   embedding_size: 128
+#   n_heads: 8
+#   n_layers: 4   
+#   dropout_prob: 0.1
+
+# final_encoder_args:
+#   embedding_size: 128
+#   n_heads: 4
+#   n_layers: 2
+#   dropout_prob: 0.1

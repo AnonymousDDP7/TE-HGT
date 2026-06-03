@@ -1,0 +1,104 @@
+import os
+import torch
+import pprint
+import argparse
+import callbacks
+import numpy as np
+import nomenclature
+from utils import load_args
+from torch_geometric.loader import DataLoader  # not torch.utils.data
+from trainer import NotALightningTrainer
+from particular_model_trainers import Trainer
+from sklearn.utils.class_weight import compute_class_weight
+
+torch.manual_seed(28)
+
+parser = argparse.ArgumentParser(description="Do stuff.")
+
+parser.add_argument("--config_file", default="./configs/combos/clip_mentalbert_graph.yaml")
+parser.add_argument("--model", type=str, default="HGNNv7")
+parser.add_argument("--epochs", type=int, default=500)
+parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--accumulation_steps", type=int, default=1)
+parser.add_argument("--dataset", type=str, default="reddit")
+parser.add_argument("--window_size", type=int, default=512)
+parser.add_argument("--position_embeddings", type=str, default="time2vec")
+parser.add_argument("--image_embeddings_type", type=str, default="clip")
+parser.add_argument("--text_embeddings_type", type=str, default="mentalbert")
+parser.add_argument("--K", type=int, default=30)
+parser.add_argument("--date_threshold", type=int, default=30)
+
+args = parser.parse_args()
+args, cfg = load_args(args)
+
+
+os.makedirs(os.path.join("./checkpoints", "{}-{}-ws-{}-{}-{}-K-{}-date_threshold-{}".format(args.model, 
+                                                                          args.dataset, 
+                                                                          args.window_size,
+                                                                          args.image_embeddings_type, 
+                                                                          args.text_embeddings_type,
+                                                                          args.K,
+                                                                          args.date_threshold)), exist_ok=True)
+
+
+NUM_WORKERS = 2
+
+# dataset and model
+dataset = nomenclature.DATASETS[args.dataset]
+# print("Dataset:", dataset)
+model = nomenclature.MODELS[args.model]
+
+train_dataset = dataset(args=args, kind="train")
+val_dataset = dataset(args=args, kind="valid")
+test_dataset = dataset(args=args, kind="test")
+
+labels = train_dataset.labels
+# print("Labels in the training set:", np.unique(labels, return_counts=True))
+class_weights = compute_class_weight("balanced", classes=np.unique(labels), y= labels)
+
+model = model(args)
+trainer = Trainer(
+    args, model, class_weights=class_weights if args.use_class_weights else None
+)
+
+train_dataloader = DataLoader(
+    train_dataset,
+    batch_size=args.batch_size,
+    shuffle=True,
+    num_workers=NUM_WORKERS,
+    pin_memory=True,
+)
+val_dataloader = DataLoader(
+    val_dataset, batch_size=8, num_workers=NUM_WORKERS, pin_memory=True
+)
+
+# test_dataloader = DataLoader(
+#     test_dataset, batch_size=1, num_workers=NUM_WORKERS, pin_memory=True
+# )
+
+# print("learning rate: ", args.base_lr)
+lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
+    optimizer=trainer.configure_optimizers(lr=args.base_lr),
+    cycle_momentum=False,
+    base_lr=args.base_lr,
+    mode="triangular",
+    step_size_up=10 * len(train_dataloader) / args.accumulation_steps,  # per epoch
+    max_lr=args.base_lr * 10,
+)
+
+lr_callback = callbacks.LambdaCallback(on_batch_end=lambda: lr_scheduler.step())
+
+
+acumen_trainer = NotALightningTrainer(
+    args=args,
+    callbacks=[lr_callback], # lr_logger],
+    # callbacks=[checkpoint_callback, lr_callback, lr_logger],
+    # logger=wandb_logger,
+)
+
+torch.backends.cudnn.benchmark = True
+
+if __name__ == '__main__':
+    acumen_trainer.fit(trainer, train_dataloader, val_dataloader)
+
+    
